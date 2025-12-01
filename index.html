@@ -10,7 +10,7 @@
         body {
             margin: 0; padding: 0;
             width: 100vw; height: 100vh;
-            overflow: hidden; /* Prevent body scroll, let children handle it */
+            overflow: hidden;
             background-color: #f8f9fa;
             font-family: 'Roboto', 'Noto Sans', sans-serif;
             display: flex;
@@ -27,7 +27,7 @@
             gap: 10px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             z-index: 100;
-            max-height: 40vh; /* Prevent panel from taking too much screen */
+            max-height: 40vh;
             overflow-y: auto;
         }
 
@@ -43,11 +43,7 @@
             resize: vertical;
         }
 
-        .button-group {
-            display: flex;
-            gap: 10px;
-        }
-
+        .button-group { display: flex; gap: 10px; }
         #generate-button { flex-grow: 1; }
 
         button {
@@ -64,24 +60,23 @@
         button:hover { background-color: #0c61d5; }
         
         #html-output-section {
-            margin-top: 15px;
-            padding-top: 10px;
-            border-top: 1px solid #eee;
-            display: none; /* Hidden by default */
+            margin-top: 15px; padding-top: 10px;
+            border-top: 1px solid #eee; display: none;
         }
-        
         #copy-button { width: 100%; background-color: #34a853; }
         #copy-button:hover { background-color: #2d8e47; }
 
-        /* --- GRAPH CONTAINER (Bottom) --- */
+        /* --- GRAPH CONTAINER --- */
         #mindmap {
             flex-grow: 1; 
             position: relative;
             overflow: hidden;
             background-color: #f8f9fa;
+            width: 100%;
+            height: 100%;
         }
 
-        /* --- D3 GRAPH STYLES --- */
+        /* --- GRAPH STYLES --- */
         .controls {
             position: absolute; bottom: 20px; right: 20px;
             display: flex; flex-direction: column; gap: 10px;
@@ -112,7 +107,6 @@
             font-size: 14px; fill: #1a73e8; font-weight: bold;
             text-anchor: middle; alignment-baseline: middle; pointer-events: none;
         }
-        /* Custom Node Colors based on 'type' property in JSON */
         .node.concept-force rect { stroke: #8ab4f8; background-color: #f1f7ff; }
         .node.concept-pressure rect { stroke: #f6aea9; background-color: #fce8e6; }
     </style>
@@ -120,7 +114,7 @@
 <body>
 
     <div id="control-panel">
-        <label for="json-input"><strong>1. Paste your Mind Map JSON:</strong></label>
+        <label for="json-input"><strong>1. Paste Mind Map JSON:</strong></label>
         <textarea id="json-input" spellcheck="false"></textarea>
         
         <div class="button-group">
@@ -129,7 +123,7 @@
         <p id="error-message" style="color: #d93025; font-size: 13px; margin: 5px 0 0 0;"></p>
         
         <div id="html-output-section">
-            <label><strong>2. Export Standalone HTML:</strong> (Copy this code to a file)</label>
+            <label><strong>2. Export Standalone HTML:</strong></label>
             <textarea id="html-output" readonly></textarea>
             <button id="copy-button" onclick="copyHtmlCode()">Copy HTML Code</button>
         </div>
@@ -149,32 +143,25 @@ let root;
 let i = 0;
 let duration = 750;
 let currentTreeData = {}; 
-
-// D3/SVG setup variables
 let svg, g, zoom, treemap;
 
-// --- D3/SVG INITIALIZATION ---
 function initializeD3() {
-    // 1. Clean up existing SVG to prevent duplicates
     d3.select("#mindmap").select("svg").remove();
-
-    // 2. Get container dimensions
     const mapContainer = document.getElementById('mindmap');
-    const width = mapContainer.offsetWidth;
-    const height = mapContainer.offsetHeight;
+    // Ensure we get the actual bounding box, even on mobile with scrollbars
+    const rect = mapContainer.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
 
-    // 3. Create SVG
     svg = d3.select("#mindmap").append("svg")
-        .attr("width", width)
-        .attr("height", height)
-        .call(d3.zoom().on("zoom", (event) => {
-            // Prevent zooming if clicking on controls, though overlay handles this
-        }))
-        .on("dblclick.zoom", null); // Disable double click zoom
+        .attr("width", "100%")
+        .attr("height", "100%")
+        .attr("viewBox", `0 0 ${width} ${height}`)
+        .call(d3.zoom().on("zoom", null)) // Prevent double initialization
+        .on("dblclick.zoom", null);
 
     g = svg.append("g");
 
-    // 4. Define Zoom Behavior
     zoom = d3.zoom()
         .scaleExtent([0.1, 4])
         .on("zoom", (event) => {
@@ -182,14 +169,11 @@ function initializeD3() {
         });
     svg.call(zoom);
 
-    // 5. Define Tree Layout (Horizontal: height, width flipped)
-    // nodeSize is [height, width] of the virtual box per node
-    const nodeHeight = 60; // Vertical space between nodes
-    const nodeWidth = 250; // Horizontal space between layers
+    const nodeHeight = 60; 
+    const nodeWidth = 250; 
     treemap = d3.tree().nodeSize([nodeHeight, nodeWidth]);
 }
 
-// --- GENERATOR FUNCTION ---
 function generateMindMap() {
     const jsonInput = document.getElementById('json-input');
     const errorMessage = document.getElementById('error-message');
@@ -198,7 +182,6 @@ function generateMindMap() {
     errorMessage.textContent = '';
     let treeData;
 
-    // 1. Parse JSON
     try {
         const rawValue = jsonInput.value.trim();
         if(!rawValue) throw new Error("Input is empty");
@@ -216,15 +199,12 @@ function generateMindMap() {
     }
     
     currentTreeData = treeData;
-    
-    // 2. Initialize Visuals
     initializeD3(); 
 
     root = d3.hierarchy(treeData, d => d.children);
     root.x0 = 0; 
     root.y0 = 0;
 
-    // 3. Collapse lower levels initially (optional, for neatness)
     function collapse(d) {
         if(d.children) {
             d._children = d.children;
@@ -232,36 +212,26 @@ function generateMindMap() {
             d.children = null;
         }
     }
-    // Collapse after level 1 (Root -> Children -> [Collapsed])
     if(root.children) {
         root.children.forEach(child => {
             if(child.children) child.children.forEach(collapse);
         });
     }
     
-    // 4. Update and Center
     update(root);
-    
-    // Slight delay to allow DOM to render before centering
-    setTimeout(() => {
-        fitToScreen();
-    }, 200);
+    setTimeout(() => { fitToScreen(); }, 200);
 
-    // 5. Generate Output Code
     htmlOutputSection.style.display = 'block';
     generateHtmlOutput(currentTreeData);
 }
 
-// --- D3 RENDERING CORE ---
 function update(source) {
     const treeData = treemap(root);
     const nodes = treeData.descendants();
     const links = treeData.descendants().slice(1);
 
-    // Normalize for fixed-depth (horizontal spacing)
-    nodes.forEach(d => { d.y = d.depth * 280; }); // Width between columns
+    nodes.forEach(d => { d.y = d.depth * 280; });
 
-    // --- NODES ---
     const node = g.selectAll('g.node')
         .data(nodes, d => d.id || (d.id = ++i));
 
@@ -270,175 +240,141 @@ function update(source) {
         .attr('transform', d => `translate(${source.y0},${source.x0})`)
         .on('click', click);
 
-    // Text Label
     nodeEnter.append('text')
-        .attr("dy", ".35em")
-        .attr("x", 0)
-        .attr("text-anchor", "middle")
-        .text(d => d.data.name);
+        .attr("dy", ".35em").attr("x", 0).attr("text-anchor", "middle").text(d => d.data.name);
 
-    // Background Rectangle (sized dynamically based on text)
     nodeEnter.insert("rect", "text")
         .each(function(d) {
             const textLen = d.data.name.length; 
-            // Calculate width based on character count (approximate)
             const estWidth = Math.max(120, textLen * 8 + 40); 
-            d3.select(this)
-                .attr("width", estWidth)
-                .attr("height", 40)
-                .attr("x", -estWidth / 2)
-                .attr("y", -20)
-                .attr("rx", 20).attr("ry", 20); // Rounded corners
+            d3.select(this).attr("width", estWidth).attr("height", 40)
+                .attr("x", -estWidth / 2).attr("y", -20).attr("rx", 20).attr("ry", 20);
         });
 
-    // Expand/Collapse Indicator (+/- circle)
     const indicators = nodeEnter.append("g")
-        .attr("class", "indicator")
-        .style("opacity", 0); // Hidden by default
+        .attr("class", "indicator").style("opacity", 0);
 
-    indicators.append("circle")
-        .attr("class", "indicator-circle")
-        .attr("r", 9)
-        .attr("cx", function(d) {
-            // Position circle at the right edge of the rect
-            const textLen = d.data.name.length;
-            const width = Math.max(120, textLen * 8 + 40);
-            return (width/2); 
-        });
+    indicators.append("circle").attr("class", "indicator-circle").attr("r", 9)
+        .attr("cx", d => (Math.max(120, d.data.name.length * 8 + 40)/2));
 
-    indicators.append("text")
-        .attr("class", "indicator-text")
-        .attr("dy", 1)
-        .attr("dx", function(d) {
-            const textLen = d.data.name.length;
-            const width = Math.max(120, textLen * 8 + 40);
-            return (width/2);
-        })
+    indicators.append("text").attr("class", "indicator-text").attr("dy", 1)
+        .attr("dx", d => (Math.max(120, d.data.name.length * 8 + 40)/2))
         .text(d => d.children ? "−" : "+");
 
-    // UPDATE
     const nodeUpdate = node.merge(nodeEnter).transition().duration(duration)
         .attr('transform', d => `translate(${d.y},${d.x})`);
 
-    // Toggle indicator visibility
-    nodeUpdate.select(".indicator")
-        .style("opacity", d => (d.children || d._children) ? 1 : 0);
-    
-    nodeUpdate.select(".indicator-text")
-        .text(d => d.children ? "−" : "+");
+    nodeUpdate.select(".indicator").style("opacity", d => (d.children || d._children) ? 1 : 0);
+    nodeUpdate.select(".indicator-text").text(d => d.children ? "−" : "+");
 
-    // EXIT
     const nodeExit = node.exit().transition().duration(duration)
-        .attr('transform', d => `translate(${source.y},${source.x})`)
-        .remove();
+        .attr('transform', d => `translate(${source.y},${source.x})`).remove();
 
-    // --- LINKS (Curved Lines) ---
-    const link = g.selectAll('path.link')
-        .data(links, d => d.id);
+    const link = g.selectAll('path.link').data(links, d => d.id);
+    const linkEnter = link.enter().insert('path', "g").attr("class", "link")
+        .attr('d', d => { const o = {x: source.x0, y: source.y0}; return diagonal(o, o); });
 
-    // Enter any new links at the parent's previous position
-    const linkEnter = link.enter().insert('path', "g")
-        .attr("class", "link")
-        .attr('d', d => {
-            const o = {x: source.x0, y: source.y0};
-            return diagonal(o, o);
-        });
+    link.merge(linkEnter).transition().duration(duration).attr('d', d => diagonal(d, d.parent));
+    link.exit().transition().duration(duration).attr('d', d => { const o = {x: source.x, y: source.y}; return diagonal(o, o); }).remove();
 
-    // Update positions
-    const linkUpdate = link.merge(linkEnter).transition().duration(duration)
-        .attr('d', d => diagonal(d, d.parent));
-
-    // Remove old links
-    const linkExit = link.exit().transition().duration(duration)
-        .attr('d', d => {
-            const o = {x: source.x, y: source.y};
-            return diagonal(o, o);
-        })
-        .remove();
-
-    // Store old positions for transition
-    nodes.forEach(d => {
-        d.x0 = d.x;
-        d.y0 = d.y;
-    });
-
-    // Curved Path Generator
+    nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+    
     function diagonal(s, d) {
-        return `M ${s.y} ${s.x}
-                C ${(s.y + d.y) / 2} ${s.x},
-                  ${(s.y + d.y) / 2} ${d.x},
-                  ${d.y} ${d.x}`;
+        return `M ${s.y} ${s.x} C ${(s.y + d.y) / 2} ${s.x}, ${(s.y + d.y) / 2} ${d.x}, ${d.y} ${d.x}`;
     }
 }
 
-// --- INTERACTION FUNCTIONS ---
 function click(event, d) {
     if (d.children) {
-        d._children = d.children;
-        d.children = null;
+        d._children = d.children; d.children = null;
     } else {
-        d.children = d._children;
-        d._children = null;
+        d.children = d._children; d._children = null;
     }
     update(d);
     
-    // Optional: Center on the clicked node
-    // centerNode(d); 
+    // IMPORTANT: Wait slightly for the update transition to register the new coordinates, then center
+    centerNode(d);
+}
+
+// --- FIXED CENTER FUNCTION FOR MOBILE ---
+function centerNode(source) {
+    if (!svg) return;
+    
+    // 1. Get current zoom scale
+    const t = d3.zoomTransform(svg.node());
+    const scale = t.k;
+    
+    // 2. Get actual container dimensions
+    const mapContainer = document.getElementById('mindmap');
+    const w = mapContainer.clientWidth;
+    const h = mapContainer.clientHeight;
+
+    // 3. Define Offsets
+    // D3 Tree: x is vertical, y is horizontal
+    // We want to center 'y' (vertical screen pos) and 'x' (horizontal screen pos)
+    
+    let x, y;
+    
+    // Is Mobile? (Small width)
+    if (w < 600) {
+        // MOBILE LOGIC:
+        // Center vertically (h/2)
+        // Offset horizontally to the LEFT (w/5) so children have room on the right
+        x = -source.y * scale + (w / 4); 
+        y = -source.x * scale + (h / 2);
+    } else {
+        // DESKTOP LOGIC:
+        // Center vertically (h/2)
+        // Offset horizontally to left-third (w/3)
+        x = -source.y * scale + (w / 3);
+        y = -source.x * scale + (h / 2);
+    }
+
+    // 4. Smooth Transition
+    svg.transition().duration(750)
+        .call(zoom.transform, d3.zoomIdentity.translate(x, y).scale(scale));
 }
 
 function fitToScreen() {
     if (!svg || !root) return;
-    
     const mapContainer = document.getElementById('mindmap');
-    const width = mapContainer.offsetWidth;
-    const height = mapContainer.offsetHeight;
-    
-    // Transition to x=0 (root left) and y=height/2 (vertically centered)
-    // d3 tree is rotated: x is vertical, y is horizontal
-    
-    const t = d3.zoomIdentity.translate(width/6, height/2).scale(1);
+    const w = mapContainer.clientWidth;
+    const h = mapContainer.clientHeight;
+    // Initial view: slightly left of center to allow growth
+    const t = d3.zoomIdentity.translate(w/6, h/2).scale(1);
     svg.transition().duration(750).call(zoom.transform, t);
 }
 
-function zoomIn() { 
-    if (svg) svg.transition().call(zoom.scaleBy, 1.3); 
-}
-function zoomOut() { 
-    if (svg) svg.transition().call(zoom.scaleBy, 0.7); 
-}
+function zoomIn() { if (svg) svg.transition().call(zoom.scaleBy, 1.3); }
+function zoomOut() { if (svg) svg.transition().call(zoom.scaleBy, 0.7); }
 
-// Handle Window Resize
 window.addEventListener('resize', () => {
     if (svg) {
         const mapContainer = document.getElementById('mindmap');
-        svg.attr("width", mapContainer.offsetWidth)
-           .attr("height", mapContainer.offsetHeight);
+        svg.attr("viewBox", `0 0 ${mapContainer.clientWidth} ${mapContainer.clientHeight}`);
     }
 });
 
-
-// --- HTML CODE GENERATOR (Constructs the file string) ---
+// --- HTML GENERATOR (Includes Mobile Fix) ---
 function generateHtmlOutput(data) {
     const jsonString = JSON.stringify(data, null, 2);
     
-    // Note: In the template literal below, we must escape ${} as \${} 
-    // when we want it to exist in the OUTPUT code, not run right now.
-    
+    // Injecting the EXACT same mobile-optimized centerNode logic into the output string
     const htmlContent = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>${data.name || 'Mind Map'}</title>
     <script src="https://d3js.org/d3.v7.min.js"><\/script>
     <style>
-        body { margin: 0; overflow: hidden; font-family: sans-serif; background: #f8f9fa; }
-        .node rect { fill: #fff; stroke: #ccc; stroke-width: 1.5px; rx: 20px; ry: 20px; }
+        body { margin: 0; overflow: hidden; font-family: sans-serif; background: #f8f9fa; width: 100vw; height: 100vh; }
+        .node rect { fill: #fff; stroke: #ccc; stroke-width: 1.5px; rx: 20px; ry: 20px; transition: all 0.5s ease; }
         .node:hover rect { stroke: #1a73e8; }
         .node text { font-size: 14px; pointer-events: none; }
         .link { fill: none; stroke: #ccc; stroke-width: 1.5px; opacity: 0.8; }
-        .controls { position: absolute; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 5px; }
-        .btn { width: 40px; height: 40px; background: white; border: 1px solid #ccc; font-size: 20px; cursor: pointer; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .controls { position: absolute; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 100; }
+        .btn { width: 45px; height: 45px; background: white; border: 1px solid #ccc; font-size: 20px; cursor: pointer; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display:flex; align-items:center; justify-content:center;}
         .node.concept-force rect { stroke: #8ab4f8; background-color: #f1f7ff; }
         .node.concept-pressure rect { stroke: #f6aea9; background-color: #fce8e6; }
     </style>
@@ -447,32 +383,31 @@ function generateHtmlOutput(data) {
     <div class="controls">
         <button class="btn" onclick="zoomIn()">+</button>
         <button class="btn" onclick="zoomOut()">-</button>
-        <button class="btn" onclick="reset()">⛶</button>
+        <button class="btn" onclick="fitToScreen()">⛶</button>
     </div>
-    <div id="graph" style="width:100vw; height:100vh;"></div>
+    <div id="graph" style="width:100%; height:100%;"></div>
 
 <script>
     const data = ${jsonString};
-    
     let i = 0, duration = 750, root;
-    const svg = d3.select("#graph").append("svg").attr("width", window.innerWidth).attr("height", window.innerHeight);
-    const g = svg.append("g");
     
+    // Setup SVG
+    const svg = d3.select("#graph").append("svg").attr("width", "100%").attr("height", "100%");
+    const g = svg.append("g");
     const zoom = d3.zoom().scaleExtent([0.1, 4]).on("zoom", (e) => g.attr("transform", e.transform));
     svg.call(zoom);
     
     const treemap = d3.tree().nodeSize([60, 250]);
     root = d3.hierarchy(data, d => d.children);
-    root.x0 = window.innerHeight / 2; root.y0 = 0;
+    root.x0 = 0; root.y0 = 0;
 
     // Initial collapse
-    if(root.children) root.children.forEach(collapse);
-    function collapse(d) {
-        if(d.children) { d._children = d.children; d._children.forEach(collapse); d.children = null; }
-    }
+    if(root.children) root.children.forEach(child => { if(child.children) child.children.forEach(collapse); });
+    function collapse(d) { if(d.children) { d._children = d.children; d._children.forEach(collapse); d.children = null; } }
 
     update(root);
-    reset();
+    // Initial center delay
+    setTimeout(() => fitToScreen(), 100);
 
     function update(source) {
         const treeData = treemap(root);
@@ -482,7 +417,6 @@ function generateHtmlOutput(data) {
         nodes.forEach(d => { d.y = d.depth * 280; });
 
         const node = g.selectAll('g.node').data(nodes, d => d.id || (d.id = ++i));
-        
         const nodeEnter = node.enter().append('g').attr('class', d => \`node \${d.data.type || ''}\`)
             .attr('transform', d => \`translate(\${source.y0},\${source.x0})\`).on('click', click);
             
@@ -490,103 +424,74 @@ function generateHtmlOutput(data) {
             const w = Math.max(120, d.data.name.length * 8 + 40);
             d3.select(this).attr("width", w).attr("height", 40).attr("x", -w/2).attr("y", -20);
         });
-        
         nodeEnter.append('text').attr("dy", ".35em").attr("text-anchor", "middle").text(d => d.data.name);
+        nodeEnter.append("circle").attr("r", 9).attr("cx", d => (Math.max(120, d.data.name.length*8+40)/2)).attr("fill", "#1a73e8").style("opacity", 0).attr("class", "ind");
         
-        // Indicator for children
-        nodeEnter.append("circle").attr("r", 5).attr("cx", d => (Math.max(120, d.data.name.length*8+40)/2)).attr("fill", "#1a73e8").style("opacity", d => d._children ? 1 : 0);
+        const nodeUpdate = node.merge(nodeEnter).transition().duration(duration).attr('transform', d => \`translate(\${d.y},\${d.x})\`);
+        nodeUpdate.select(".ind").style("opacity", d => (d.children || d._children) ? 1 : 0).attr("fill", d => d.children ? "#fff" : "#1a73e8").attr("stroke", "#1a73e8");
 
-        const nodeUpdate = node.merge(nodeEnter).transition().duration(duration)
-            .attr('transform', d => \`translate(\${d.y},\${d.x})\`);
-            
-        nodeUpdate.select("circle").style("opacity", d => (d.children || d._children) ? 1 : 0).attr("fill", d => d.children ? "#fff" : "#1a73e8").attr("stroke", "#1a73e8");
-
-        node.exit().transition().duration(duration)
-            .attr('transform', d => \`translate(\${source.y},\${source.x})\`).remove();
+        node.exit().transition().duration(duration).attr('transform', d => \`translate(\${source.y},\${source.x})\`).remove();
 
         const link = g.selectAll('path.link').data(links, d => d.id);
-        const linkEnter = link.enter().insert('path', "g").attr("class", "link")
-            .attr('d', d => { const o = {x: source.x0, y: source.y0}; return diagonal(o, o); });
-            
+        const linkEnter = link.enter().insert('path', "g").attr("class", "link").attr('d', d => { const o = {x: source.x0, y: source.y0}; return diagonal(o, o); });
         link.merge(linkEnter).transition().duration(duration).attr('d', d => diagonal(d, d.parent));
         link.exit().transition().duration(duration).attr('d', d => { const o = {x: source.x, y: source.y}; return diagonal(o, o); }).remove();
         
         nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
     }
 
-    function diagonal(s, d) {
-        return \`M \${s.y} \${s.x} C \${(s.y + d.y) / 2} \${s.x}, \${(s.y + d.y) / 2} \${d.x}, \${d.y} \${d.x}\`;
-    }
+    function diagonal(s, d) { return \`M \${s.y} \${s.x} C \${(s.y + d.y) / 2} \${s.x}, \${(s.y + d.y) / 2} \${d.x}, \${d.y} \${d.x}\`; }
 
     function click(event, d) {
         if (d.children) { d._children = d.children; d.children = null; } 
         else { d.children = d._children; d._children = null; }
         update(d);
+        centerNode(d);
+    }
+    
+    // --- MOBILE OPTIMIZED CENTER NODE ---
+    function centerNode(source) {
+        const t = d3.zoomTransform(svg.node());
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        let x, y;
+        
+        if (w < 600) {
+            x = -source.y * t.k + (w / 4); // Mobile: Less offset to left
+            y = -source.x * t.k + (h / 2);
+        } else {
+            x = -source.y * t.k + (w / 3); // Desktop: More offset to left
+            y = -source.x * t.k + (h / 2);
+        }
+        svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity.translate(x, y).scale(t.k));
+    }
+
+    function fitToScreen() {
+        const w = window.innerWidth, h = window.innerHeight;
+        svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity.translate(w/6, h/2)); 
     }
     
     function zoomIn() { svg.transition().call(zoom.scaleBy, 1.3); }
     function zoomOut() { svg.transition().call(zoom.scaleBy, 0.7); }
-    function reset() { 
-        svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity.translate(window.innerWidth/6, window.innerHeight/2)); 
-    }
-    
-    window.onresize = () => svg.attr("width", window.innerWidth).attr("height", window.innerHeight);
+    window.onresize = () => svg.attr("width", "100%").attr("height", "100%");
 <\/script>
 </body>
 </html>`;
-
     document.getElementById('html-output').value = htmlContent;
 }
 
 function copyHtmlCode() {
     const textarea = document.getElementById('html-output');
-    
-    // Modern Copy API
     if (navigator.clipboard) {
-        navigator.clipboard.writeText(textarea.value).then(() => {
-            const btn = document.getElementById('copy-button');
-            const originalText = btn.textContent;
-            btn.textContent = "Copied!";
-            setTimeout(() => btn.textContent = originalText, 2000);
-        }).catch(err => {
-            console.error('Failed to copy: ', err);
-            fallbackCopy(textarea);
-        });
-    } else {
-        fallbackCopy(textarea);
-    }
+        navigator.clipboard.writeText(textarea.value).then(() => alert("Copied!")).catch(() => fallbackCopy(textarea));
+    } else { fallbackCopy(textarea); }
 }
-
 function fallbackCopy(textarea) {
-    textarea.select();
-    textarea.setSelectionRange(0, 99999);
-    document.execCommand('copy');
-    alert("Code copied to clipboard!");
+    textarea.select(); document.execCommand('copy'); alert("Copied!");
 }
 
-// --- INITIAL LOAD DATA ---
 document.addEventListener('DOMContentLoaded', () => {
-    const exampleData = {
-        "name": "Project Goal",
-        "children": [
-            { 
-                "name": "Research", 
-                "type": "concept-force",
-                "children": [
-                    { "name": "Competitor Analysis" },
-                    { "name": "User Interviews" }
-                ]
-            },
-            { 
-                "name": "Development",
-                "type": "concept-pressure",
-                "children": [
-                    { "name": "Frontend" },
-                    { "name": "Backend" }
-                ]
-            }
-        ]
-    };
+    const exampleData = { "name": "Start Here", "children": [{ "name": "Item 1", "children": [{"name": "Details..."}] }, { "name": "Item 2" }] };
     document.getElementById('json-input').value = JSON.stringify(exampleData, null, 2);
     generateMindMap(); 
 });
