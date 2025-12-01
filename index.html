@@ -14,7 +14,7 @@
             background-color: #f8f9fa;
             font-family: 'Roboto', 'Noto Sans', sans-serif;
             display: flex;
-            flex-direction: column; /* Allows control panel on top */
+            flex-direction: column; 
         }
         #control-panel {
             background-color: #fff;
@@ -26,7 +26,7 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             z-index: 100;
         }
-        #json-input {
+        #json-input, #html-output {
             width: 100%;
             min-height: 100px;
             padding: 10px;
@@ -35,8 +35,9 @@
             box-sizing: border-box;
             font-family: monospace;
             font-size: 12px;
+            resize: vertical;
         }
-        #generate-button {
+        #generate-button, #copy-button {
             background-color: #1a73e8;
             color: white;
             padding: 10px 15px;
@@ -46,11 +47,17 @@
             font-size: 16px;
             transition: background-color 0.2s;
         }
-        #generate-button:hover { background-color: #0c61d5; }
+        #generate-button:hover, #copy-button:hover { background-color: #0c61d5; }
+        #html-output-section {
+            display: none; /* Hide initially */
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid #eee;
+        }
 
         /* --- GRAPH CONTAINER --- */
         #mindmap {
-            flex-grow: 1; /* SVG takes up the rest of the screen */
+            flex-grow: 1; 
             overflow: hidden;
         }
 
@@ -58,7 +65,7 @@
         .controls {
             position: absolute; bottom: 20px; right: 20px;
             display: flex; flex-direction: column; gap: 10px;
-            z-index: 110; /* Higher z-index than control panel */
+            z-index: 110; 
         }
         .btn {
             width: 45px; height: 45px; border-radius: 50%; background: white;
@@ -92,9 +99,16 @@
 <body>
 
     <div id="control-panel">
+        <label for="json-input">Paste your Mind Map JSON here:</label>
         <textarea id="json-input" placeholder="Paste your Mind Map JSON here..."></textarea>
         <button id="generate-button" onclick="generateMindMap()">Generate Mind Map</button>
         <p id="error-message" style="color: red; font-size: 14px; margin: 0;"></p>
+        
+        <div id="html-output-section">
+            <label>Generated HTML Code:</label>
+            <textarea id="html-output" readonly></textarea>
+            <button id="copy-button" onclick="copyHtmlCode()">Copy HTML Code</button>
+        </div>
     </div>
 
     <div class="controls">
@@ -106,10 +120,11 @@
     <div id="mindmap"></div>
 
 <script>
-// --- GLOBAL VARIABLES (Initialized empty) ---
+// --- GLOBAL VARIABLES ---
 let root;
 let i = 0;
 let duration = 750;
+let currentTreeData = {}; // Store the successfully parsed JSON here
 
 // D3/SVG setup variables
 let width, height, svg, g, zoom, treemap;
@@ -119,13 +134,14 @@ function initializeD3() {
     // Clear previous SVG
     d3.select("#mindmap").select("svg").remove();
 
-    width = document.getElementById('mindmap').offsetWidth;
-    height = document.getElementById('mindmap').offsetHeight;
+    // Get live dimensions of the mindmap container
+    const mapContainer = document.getElementById('mindmap');
+    width = mapContainer.offsetWidth;
+    height = mapContainer.offsetHeight;
 
     svg = d3.select("#mindmap").append("svg")
         .attr("width", width)
-        .attr("height", height)
-        .on("click", () => { /* Logic */ });
+        .attr("height", height);
 
     g = svg.append("g");
 
@@ -154,21 +170,24 @@ function generateMindMap() {
         treeData = JSON.parse(jsonString);
     } catch (e) {
         errorMessage.textContent = "Error: Invalid JSON format. Please check brackets, quotes, and commas.";
+        document.getElementById('html-output-section').style.display = 'none';
         return;
     }
 
     if (!treeData || !treeData.name) {
-         errorMessage.textContent = "Error: JSON must have a 'name' field and a 'children' array.";
+         errorMessage.textContent = "Error: JSON must have a 'name' field and a 'children' array (even if empty).";
+         document.getElementById('html-output-section').style.display = 'none';
          return;
     }
-
-    initializeD3(); // Re-initialize the D3 canvas
+    
+    currentTreeData = treeData; // Store valid data
+    initializeD3(); 
 
     root = d3.hierarchy(treeData, d => d.children);
     root.x0 = 0; 
     root.y0 = 0;
 
-    // Initial Collapse (Optional, but good for large maps)
+    // Initial Collapse
     function collapse(d) {
         if(d.children) {
             d._children = d.children;
@@ -178,7 +197,6 @@ function generateMindMap() {
     }
     if(root.children) {
         root.children.forEach(collapse);
-        // Expand the first level
         if(root._children) {
             root.children = root._children;
             root._children = null;
@@ -189,9 +207,13 @@ function generateMindMap() {
     setTimeout(() => {
         centerNode(root);
     }, 100);
+
+    // Show HTML Output section
+    document.getElementById('html-output-section').style.display = 'block';
+    generateHtmlOutput(currentTreeData);
 }
 
-// --- D3 RENDERING LOGIC (Same as before) ---
+// --- D3 RENDERING LOGIC (The map drawing part) ---
 function update(source) {
     const treeData = treemap(root);
     const nodes = treeData.descendants();
@@ -245,15 +267,13 @@ function update(source) {
 
     const nodeExit = node.exit().transition().duration(duration)
         .attr('transform', d => `translate(${source.y},${source.x})`).remove();
-    nodeExit.select('rect').attr('r', 1e-6);
-    nodeExit.select('text').style('fill-opacity', 1e-6);
 
     const link = g.selectAll('path.link').data(links, d => d.id);
     const linkEnter = link.enter().insert('path', "g").attr("class", "link")
         .attr('d', d => {
             const o = {x: source.x0, y: source.y0}; return diagonal(o, o);
         });
-    const linkUpdate = link.merge(linkEnter).transition().duration(duration)
+    link.merge(linkEnter).transition().duration(duration)
         .attr('d', d => diagonal(d, d.parent));
     link.exit().transition().duration(duration)
         .attr('d', d => {
@@ -266,7 +286,229 @@ function update(source) {
     }
 }
 
-// --- USER CONTROL FUNCTIONS (Same as before) ---
+// --- USER CONTROL FUNCTIONS ---
+function click(event, d) {
+    if (d.children) { d._children = d.children; d.children = null; } 
+    else { d.children = d._children; d._children = null; }
+    update(d);
+    centerNode(d);
+}
+
+function fitToScreen() {
+    centerNode(root);
+}
+
+/**
+ * FIX for Mobile Panning: Use document.getElementById('mindmap') dimensions
+ * for accurate viewport calculation.
+ */
+function centerNode(source) {
+    if (!svg || !root) return;
+    const t = d3.zoomTransform(svg.node());
+    
+    // Use container dimensions for accurate centering
+    const mapContainer = document.getElementById('mindmap');
+    const mapWidth = mapContainer.offsetWidth;
+    const mapHeight = mapContainer.offsetHeight;
+
+    let x = -source.y0; 
+    let y = -source.x0;
+    
+    // Center logic: Move to left third and vertical center
+    x = x * t.k + mapWidth / 3; 
+    y = y * t.k + mapHeight / 2;
+    
+    svg.transition().duration(750)
+        .call(zoom.transform, d3.zoomIdentity.translate(x,y).scale(t.k));
+}
+
+function zoomIn() { svg.transition().call(zoom.scaleBy, 1.3); }
+function zoomOut() { svg.transition().call(zoom.scaleBy, 0.7); }
+
+window.addEventListener('resize', () => {
+    if (svg) {
+        // Re-get dimensions on resize
+        const mapContainer = document.getElementById('mindmap');
+        width = mapContainer.offsetWidth;
+        height = mapContainer.offsetHeight;
+        svg.attr("width", width).attr("height", height);
+        // Recenter after resize
+        fitToScreen();
+    }
+});
+
+
+// --- HTML CODE GENERATION FUNCTIONS ---
+
+function generateHtmlOutput(data) {
+    const jsonString = JSON.stringify(data, null, 2); // Pretty print the JSON
+    const template = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>${data.name} Mind Map</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        /* --- CORE UI SETUP --- */
+        body {
+            margin: 0; padding: 0; width: 100vw; height: 100vh;
+            overflow: hidden; background-color: #f8f9fa;
+            font-family: 'Roboto', 'Noto Sans', sans-serif;
+        }
+        .controls {
+            position: absolute; bottom: 20px; right: 20px;
+            display: flex; flex-direction: column; gap: 10px; z-index: 100;
+        }
+        .btn {
+            width: 45px; height: 45px; border-radius: 50%; background: white;
+            border: 1px solid #ddd; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            font-size: 20px; cursor: pointer; display: flex; align-items: center; 
+            justify-content: center; color: #555; transition: all 0.2s;
+        }
+        .node { cursor: pointer; }
+        .node rect {
+            fill: #fff; stroke: #e0e0e0; stroke-width: 1.5px;
+            rx: 20px; ry: 20px; filter: drop-shadow(0 3px 3px rgba(0,0,0,0.05));
+            transition: all 0.5s ease;
+        }
+        .node:hover rect { stroke: #1a73e8; filter: drop-shadow(0 5px 8px rgba(0,0,0,0.1)); }
+        .node text {
+            font-size: 14px; fill: #202124; font-weight: 500; pointer-events: none;
+        }
+        .link { fill: none; stroke: #bbc1c9; stroke-width: 1.5px; opacity: 0.8; }
+        .indicator-circle { fill: #fff; stroke: #1a73e8; stroke-width: 1.5px; }
+        .indicator-text {
+            font-size: 14px; fill: #1a73e8; font-weight: bold;
+            text-anchor: middle; alignment-baseline: middle; pointer-events: none;
+        }
+        /* Colors */
+        .node.concept-force rect { stroke: #8ab4f8; background-color: #f1f7ff; }
+        .node.concept-pressure rect { stroke: #f6aea9; background-color: #fce8e6; }
+    </style>
+</head>
+<body>
+
+    <div class="controls">
+        <button class="btn" onclick="zoomIn()" title="Zoom In">+</button>
+        <button class="btn" onclick="zoomOut()" title="Zoom Out">-</button>
+        <button class="btn" onclick="fitToScreen()" title="Reset View">⛶</button>
+    </div>
+
+    <div id="mindmap"></div>
+
+<script>
+// --- 1. DATA ---
+const treeData = ${jsonString.replace(/\n/g, '\n')}; 
+
+// --- 2. CONFIGURATION ---
+let root; let i = 0; let duration = 750;
+const nodeWidth = 400; const nodeHeight = 70;
+
+const width = window.innerWidth;
+const height = window.innerHeight;
+
+const svg = d3.select("#mindmap").append("svg")
+    .attr("width", width).attr("height", height);
+const g = svg.append("g");
+
+const zoom = d3.zoom().scaleExtent([0.1, 4])
+    .on("zoom", (event) => { g.attr("transform", event.transform); });
+svg.call(zoom);
+
+const treemap = d3.tree().nodeSize([nodeHeight, nodeWidth]);
+
+root = d3.hierarchy(treeData, d => d.children);
+root.x0 = 0; root.y0 = 0;
+
+// Initial Collapse
+function collapse(d) {
+    if(d.children) {
+        d._children = d.children;
+        d._children.forEach(collapse);
+        d.children = null;
+    }
+}
+if(root.children) {
+    root.children.forEach(collapse);
+    if(root._children) {
+        root.children = root._children;
+        root._children = null;
+    }
+}
+
+update(root);
+setTimeout(() => { centerNode(root); }, 100);
+
+// --- 3. UPDATE FUNCTION ---
+function update(source) {
+    const treeData = treemap(root);
+    const nodes = treeData.descendants();
+    const links = treeData.descendants().slice(1);
+    nodes.forEach(d => { d.y = d.depth * 350; });
+
+    const node = g.selectAll('g.node').data(nodes, d => d.id || (d.id = ++i));
+
+    const nodeEnter = node.enter().append('g')
+        .attr('class', d => \`node \${d.data.type || ''}\`)
+        .attr('transform', d => \`translate(\${source.y0},\${source.x0})\`)
+        .on('click', click);
+
+    nodeEnter.append('text')
+        .attr("dy", ".35em").attr("x", 0).attr("text-anchor", "middle").text(d => d.data.name);
+
+    nodeEnter.insert("rect", "text")
+        .each(function(d) {
+            const textLen = d.data.name.length; 
+            const estWidth = Math.max(140, textLen * 9 + 40); 
+            d3.select(this).attr("width", estWidth).attr("height", 45)
+                .attr("x", -estWidth / 2).attr("y", -22.5);
+        });
+
+    const indicators = nodeEnter.append("g")
+        .attr("class", "indicator")
+        .style("opacity", d => (d.children || d._children) ? 1 : 0);
+
+    indicators.append("circle").attr("class", "indicator-circle").attr("r", 10)
+        .attr("cx", function(d) {
+             const textLen = d.data.name.length; 
+             const width = Math.max(140, textLen * 9 + 40);
+             return (width/2); 
+        });
+
+    indicators.append("text").attr("class", "indicator-text").attr("dy", 1)
+        .attr("dx", function(d) {
+             const textLen = d.data.name.length; 
+             const width = Math.max(140, textLen * 9 + 40);
+             return (width/2);
+        })
+        .text(d => d.children ? "−" : "+");
+
+    const nodeUpdate = node.merge(nodeEnter).transition().duration(duration)
+        .attr('transform', d => \`translate(\${d.y},\${d.x})\`);
+
+    nodeUpdate.select(".indicator-text").text(d => d.children ? "−" : "+");
+    nodeUpdate.select(".indicator").style("opacity", d => (d.children || d._children) ? 1 : 0);
+
+    node.exit().transition().duration(duration)
+        .attr('transform', d => \`translate(\${source.y},\${source.x})\`).remove();
+
+    const link = g.selectAll('path.link').data(links, d => d.id);
+    const linkEnter = link.enter().insert('path', "g").attr("class", "link")
+        .attr('d', d => { const o = {x: source.x0, y: source.y0}; return diagonal(o, o); });
+    link.merge(linkEnter).transition().duration(duration)
+        .attr('d', d => diagonal(d, d.parent));
+    link.exit().transition().duration(duration)
+        .attr('d', d => { const o = {x: source.x, y: source.y}; return diagonal(o, o); }).remove();
+
+    nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+    function diagonal(s, d) {
+        return \`M \${s.y} \${s.x} C \${(s.y + d.y) / 2} \${s.x}, \${(s.y + d.y) / 2} \${d.x}, \${d.y} \${d.x}\`;
+    }
+}
+
+// --- 4. CONTROL LOGIC ---
+
 function click(event, d) {
     if (d.children) { d._children = d.children; d.children = null; } 
     else { d.children = d._children; d._children = null; }
@@ -281,13 +523,12 @@ function fitToScreen() {
 function centerNode(source) {
     if (!svg || !root) return;
     const t = d3.zoomTransform(svg.node());
-    const mapWidth = document.getElementById('mindmap').offsetWidth;
-    const mapHeight = document.getElementById('mindmap').offsetHeight;
+    const mapWidth = window.innerWidth;
+    const mapHeight = window.innerHeight;
 
     let x = -source.y0; 
     let y = -source.x0;
     
-    // Center logic: Move to left third (mapWidth / 3) and vertical center (mapHeight / 2)
     x = x * t.k + mapWidth / 3; 
     y = y * t.k + mapHeight / 2;
     
@@ -300,23 +541,38 @@ function zoomOut() { svg.transition().call(zoom.scaleBy, 0.7); }
 
 window.addEventListener('resize', () => {
     if (svg) {
-        width = document.getElementById('mindmap').offsetWidth;
-        height = document.getElementById('mindmap').offsetHeight;
-        svg.attr("width", width).attr("height", height);
+        svg.attr("width", window.innerWidth).attr("height", window.innerHeight);
+        fitToScreen();
     }
 });
+</script>
+</body>
+</html>`;
 
-// Load the initial JSON example into the textarea
+    document.getElementById('html-output').value = template;
+}
+
+function copyHtmlCode() {
+    const textarea = document.getElementById('html-output');
+    textarea.select();
+    document.execCommand('copy');
+    alert('HTML Code copied to clipboard!');
+}
+
+// --- INITIAL LOAD ---
 document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('json-input').value = JSON.stringify({
-        "name": "బలం మరియు పీడనం (Example)",
+    // Initial Map Setup (using the example data for demonstration)
+    const exampleData = {
+        "name": "Mind Map Generator (Example)",
         "children": [
-            { "name": "బలం (Force)", "type": "concept-force", "children": [ { "name": "స్పర్శాబలాలు" } ] },
-            { "name": "పీడనం (Pressure)", "type": "concept-pressure", "children": [ { "name": "వాతావరణ పీడనం" } ] }
+            { "name": "Feature 1: JSON Input", "type": "concept-force", "children": [ { "name": "Paste structure here" } ] },
+            { "name": "Feature 2: Dynamic HTML Output", "type": "concept-pressure", "children": [ { "name": "Copy/Paste to blog" } ] }
         ]
-    }, null, 2); // Pre-fill with a sample for easy use
+    };
+    document.getElementById('json-input').value = JSON.stringify(exampleData, null, 2);
     
-    // **Initial map generation on load**
+    // Generate the initial map on load
+    // The D3 initialization must happen within the generateMindMap function
     generateMindMap(); 
 });
 </script>
